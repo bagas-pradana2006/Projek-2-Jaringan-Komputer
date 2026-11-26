@@ -15,6 +15,7 @@ Aplikasi Echo Server sederhana dalam dua versi socket, dipakai untuk membandingk
 
 - Python 3.8 atau lebih baru
 - Tidak ada library tambahan (hanya modul bawaan Python)
+- [clumsy](https://jagt.github.io/clumsy/) di laptop server, khusus untuk simulasi packet loss (Skenario 2)
 
 ## Workload pengujian
 
@@ -36,6 +37,8 @@ Semua perintah dijalankan dari **folder utama repo** (bukan dari dalam `src`), s
 2. Di laptop server, cek IP dengan `ipconfig` (Windows) atau `ip a` (Linux).
 3. Saat Windows meminta izin firewall untuk Python, izinkan untuk **Private networks**. Pastikan profil jaringan hotspot diatur sebagai Private.
 
+Pada pengujian kelompok, laptop server mendapat IP `10.134.102.190` dan laptop client `10.134.102.66`. Ganti IP pada contoh di bawah dengan IP laptop server kalian.
+
 **TCP**
 
 ```
@@ -43,7 +46,7 @@ Semua perintah dijalankan dari **folder utama repo** (bukan dari dalam `src`), s
 python src/tcp_server.py
 
 # Laptop client (ganti dengan IP laptop server)
-python src/tcp_client.py 192.168.x.x
+python src/tcp_client.py 10.134.102.190
 ```
 
 **UDP**
@@ -53,10 +56,10 @@ python src/tcp_client.py 192.168.x.x
 python src/udp_server.py
 
 # Laptop client (ganti dengan IP laptop server)
-python src/udp_client.py 192.168.x.x
+python src/udp_client.py 10.134.102.190
 ```
 
-Server harus sudah berjalan sebelum client dijalankan. Server tetap hidup setelah client selesai, jadi bisa dipakai untuk beberapa kali pengujian. Hentikan server dengan Ctrl+C (atau tutup jendela terminal).
+Server harus sudah berjalan sebelum client dijalankan. Server tetap hidup setelah client selesai, jadi bisa dipakai untuk beberapa kali pengujian. Hentikan server dengan Ctrl+C (atau tutup jendela terminal). Di Windows, Ctrl+C kadang baru bereaksi setelah ada paket masuk karena server sedang menunggu di `accept()` atau `recvfrom()`; Ctrl+Break bisa dipakai sebagai gantinya.
 
 ### Pengujian di satu laptop (localhost)
 
@@ -66,6 +69,25 @@ Jalankan server dan client di dua terminal berbeda, tanpa argumen IP (default `1
 python src/tcp_server.py
 python src/tcp_client.py
 ```
+
+```
+python src/udp_server.py
+python src/udp_client.py
+```
+
+### Simulasi packet loss (Skenario 2)
+
+Packet loss disimulasikan dengan clumsy yang dijalankan di **laptop server** (jalankan sebagai Administrator):
+
+1. Isi kolom Filter dengan:
+   ```
+   inbound and (tcp.DstPort == 5000 or udp.DstPort == 5001)
+   ```
+2. Centang **Drop**, isi Chance **5.0%**, dan centang **Inbound** saja.
+3. Klik **Start**, lalu jalankan client TCP dan UDP seperti biasa.
+4. Klik **Stop** setelah pengujian selesai agar jaringan kembali normal.
+
+Filter ini hanya membuang paket yang masuk ke port server aplikasi, sehingga lalu lintas lain di laptop tidak terganggu.
 
 ## Hasil
 
@@ -82,11 +104,25 @@ Arti kolom `status`:
 - `corrupt`: echo kembali tetapi isinya berbeda
 - `lost`: echo tidak datang dalam batas timeout (khusus UDP)
 
+Kolom `terlambat` pada `udp_summary.csv` menghitung echo yang baru datang setelah timeout pesannya habis. Echo seperti ini dibuang oleh client dan tidak dihitung sebagai `ok`, agar tidak tertukar dengan balasan pesan berikutnya.
+
 Setiap kali client dijalankan, file CSV lama akan ditimpa. Ganti nama atau pindahkan file hasil sebelum menjalankan pengujian berikutnya jika ingin menyimpannya.
+
+### Penamaan file pada paket data pengujian
+
+Hasil pengujian kelompok disimpan dengan nama yang menunjukkan skenario dan pengulangan:
+
+| Pola nama | Arti |
+|---|---|
+| `s1_<protokol>_<jenis>_run1.csv` sampai `run3` | Skenario 1 (kondisi normal), pengulangan ke-1 sampai ke-3 |
+| `s2_<protokol>_<jenis>.csv` | Skenario 2 (packet loss 5%) |
+| `s1_rekap.csv`, `s2_rekap.csv` | Rekap gabungan yang dipakai pada tabel laporan |
+
+`<protokol>` berisi `tcp` atau `udp`, sedangkan `<jenis>` berisi `results` atau `summary`.
 
 ## Capture Wireshark
 
-Capture dilakukan di **laptop client** pada interface Wi-Fi. Filter yang dipakai:
+Capture dilakukan di **laptop client** pada interface Wi-Fi dengan capture filter `host 10.134.102.190` (IP laptop server). Display filter yang dipakai:
 
 | Tujuan | Filter |
 |---|---|
@@ -95,6 +131,8 @@ Capture dilakukan di **laptop client** pada interface Wi-Fi. Filter yang dipakai
 | 3-way handshake | `tcp.port == 5000 && tcp.flags.syn == 1` |
 | Penutupan koneksi | `tcp.port == 5000 && tcp.flags.fin == 1` |
 | Retransmission TCP | `tcp.analysis.retransmission` |
+
+Wireshark secara default menganggap TCP port 5000 sebagai protokol IPA (GSM over IP), sehingga paket data TCP tampil sebagai **RSL [Malformed Packet]**. Paketnya sebenarnya normal. Untuk menampilkannya dengan benar, buka **Analyze → Decode As…**, isi baris *TCP port* = `5000`, ubah kolom *Current* menjadi **(none)**, lalu klik **Save** dan **OK**.
 
 ## Catatan khusus Windows
 
